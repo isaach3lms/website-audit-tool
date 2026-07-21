@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: website-audit-tool
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --timeout 60 --workers 2 --bind 0.0.0.0:$PORT
+    envVars:
+      - key: FLASK_DEBUG
+        value: "0"

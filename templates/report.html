@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inspection Report — {{ site_label }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="blueprint-bg">
+<main class="report">
+
+  <header class="report-header">
+    <div>
+      <div class="intake-tag">INSPECTION REPORT</div>
+      <h1>{{ site_label }}</h1>
+      <div class="report-meta">
+        <span>{{ seed_url }}</span>
+        <span>·</span>
+        <span>{{ generated_at }}</span>
+        <span>·</span>
+        <span>{{ pages_ok }}/{{ pages_crawled }} pages reachable</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <form id="pdf-form" action="/audit/pdf" method="post">
+        <input type="hidden" name="report_data" id="report-data-input">
+        <button type="submit" class="btn-primary">Download PDF</button>
+      </form>
+      <a href="/" class="btn-ghost">New inspection</a>
+    </div>
+  </header>
+  <script type="application/json" id="report-data-json">{{ report_data | tojson }}</script>
+  <script>
+    document.getElementById('pdf-form').addEventListener('submit', function () {
+      document.getElementById('report-data-input').value =
+        document.getElementById('report-data-json').textContent;
+    });
+  </script>
+
+  <section class="stamp-row">
+    <div class="stamp stamp-overall stamp-{{ 'pass' if overall_score and overall_score>=80 else ('warn' if overall_score and overall_score>=60 else 'fail') }}">
+      <div class="stamp-score">{{ overall_score if overall_score is not none else '—' }}</div>
+      <div class="stamp-label">OVERALL</div>
+    </div>
+    <div class="stamp stamp-{{ 'pass' if seo_score and seo_score>=80 else ('warn' if seo_score and seo_score>=60 else 'fail') }}">
+      <div class="stamp-score">{{ seo_score if seo_score is not none else '—' }}</div>
+      <div class="stamp-label">SEO · {{ seo_grade }}</div>
+    </div>
+    <div class="stamp stamp-{{ 'pass' if perf_score and perf_score>=80 else ('warn' if perf_score and perf_score>=60 else 'fail') }}">
+      <div class="stamp-score">{{ perf_score if perf_score is not none else '—' }}</div>
+      <div class="stamp-label">PERFORMANCE · {{ perf_grade }}</div>
+    </div>
+    <div class="stamp stamp-{{ 'pass' if design_score and design_score>=80 else ('warn' if design_score and design_score>=60 else 'fail') }}">
+      <div class="stamp-score">{{ design_score if design_score is not none else '—' }}</div>
+      <div class="stamp-label">DESIGN &amp; POLISH · {{ design_grade }}</div>
+    </div>
+    <div class="stamp stamp-{{ 'pass' if links_score and links_score>=80 else ('warn' if links_score and links_score>=60 else 'fail') }}">
+      <div class="stamp-score">{{ links_score if links_score is not none else '—' }}</div>
+      <div class="stamp-label">LINKS · {{ links_grade }}</div>
+    </div>
+  </section>
+
+  <p class="design-note">"Design &amp; Polish" is a heuristic signal (responsiveness, custom type, palette, motion, brand completeness) — not a taste judgment. Treat it as a prompt to look closer, not a verdict.</p>
+
+  {% macro section(title, tag, issues, counts) %}
+  <section class="findings">
+    <div class="findings-head">
+      <h2>{{ title }}</h2>
+      <div class="count-chip">
+        <span class="dot dot-pass"></span>{{ counts.pass }} pass
+        <span class="dot dot-warn"></span>{{ counts.warn }} notice
+        <span class="dot dot-fail"></span>{{ counts.fail }} issue
+      </div>
+    </div>
+    {% if issues %}
+      {% for i in issues %}
+      <div class="annotation annotation-{{ i.status }}">
+        <div class="annotation-tag">{{ 'ISSUE' if i.status == 'fail' else 'NOTICE' }}</div>
+        <div class="annotation-body">
+          <div class="annotation-label">{{ i.label }}</div>
+          <div class="annotation-detail">{{ i.detail }}</div>
+          <div class="annotation-page">{{ i.page }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="all-clear">No {{ tag }} issues found across the crawled pages.</div>
+    {% endif %}
+  </section>
+  {% endmacro %}
+
+  {{ section("SEO", "SEO", seo_issues, seo_counts) }}
+  {{ section("Performance", "performance", perf_issues, perf_counts) }}
+  {{ section("Design & Polish", "design", design_issues, design_counts) }}
+
+  {{ section("Links", "link", link_issues, links_counts) }}
+  <p class="design-note" style="margin-top:-28px;">
+    Checked {{ links_checked }} of {{ links_total }} unique links found across crawled pages
+    (internal and external).
+    {% if links_skipped %}{{ links_skipped }} link(s) skipped past the {{ links_checked }}-link check limit.{% endif %}
+    Broken internal links are flagged as issues; broken external links are flagged as notices, since that's the destination site's problem.
+  </p>
+
+  <section class="findings">
+    <div class="findings-head"><h2>Pages crawled</h2></div>
+    <table class="page-table">
+      <thead>
+        <tr><th>URL</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {% for p in per_page %}
+        <tr>
+          <td class="mono">{{ p.url }}</td>
+          <td>
+            {% if p.ok %}
+              <span class="tag tag-pass">{{ p.status_code }}</span>
+            {% else %}
+              <span class="tag tag-fail">{{ p.status_code or 'error' }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+</main>
+</body>
+</html>

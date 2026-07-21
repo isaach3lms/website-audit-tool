@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Site Inspection — Website Audit Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="blueprint-bg">
+  <main class="intake">
+    <div class="intake-card">
+      <div class="intake-tag">FORM 07-A · SITE INSPECTION REQUEST</div>
+      <h1>Website Audit</h1>
+      <p class="intake-sub">Enter a site and we'll walk its pages, checking SEO, performance, and design &amp; polish signals — like a building inspector working room to room.</p>
+
+      {% if error %}
+      <div class="notice notice-fail">{{ error }}</div>
+      {% endif %}
+
+      <form action="/audit" method="post" class="intake-form">
+        <label for="url">Site to inspect</label>
+        <input type="text" id="url" name="url" placeholder="example.com" required autofocus>
+
+        <div class="field-row">
+          <div class="field-col">
+            <label for="max_pages">Pages to crawl</label>
+            <input type="number" id="max_pages" name="max_pages" value="10" min="1" max="30">
+          </div>
+          <div class="field-col">
+            <label for="max_depth">Crawl depth</label>
+            <input type="number" id="max_depth" name="max_depth" value="2" min="0" max="4">
+          </div>
+        </div>
+
+        <button type="submit" class="btn-submit">Begin inspection →</button>
+      </form>
+
+      <div class="intake-footnote">Same-domain pages only · runs entirely on your machine · no data leaves this session</div>
+    </div>
+  </main>
+</body>
+</html>
