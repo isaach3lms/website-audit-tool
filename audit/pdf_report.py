@@ -7,6 +7,7 @@ need — keeps this reliable on free-tier hosts.
 """
 
 import io
+from xml.sax.saxutils import escape as _esc
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
@@ -99,12 +100,15 @@ def _findings_section(title, issues, counts, story, s):
         status = issue.get("status", "warn")
         color, bg = _STATUS_COLORS.get(status, (WARN, WARN_BG))
         tag_text = "ISSUE" if status == "fail" else "NOTICE"
+        label = _esc(str(issue.get("label", "")))
+        detail = _esc(str(issue.get("detail", "")))
+        page = _esc(str(issue.get("page", "")))
         cell = Table(
             [[Paragraph(
                 f"<font color='{color.hexval()}'><b>{tag_text}</b></font><br/><br/>"
-                f"<font color='{INK_SOFT.hexval()}'><b>{issue.get('label', '')}</b></font><br/>"
-                f"<font color='{INK_MUTED.hexval()}'>{issue.get('detail', '')}</font><br/>"
-                f"<font color='{BRAND_SOFT.hexval()}'>{issue.get('page', '')}</font>",
+                f"<font color='{INK_SOFT.hexval()}'><b>{label}</b></font><br/>"
+                f"<font color='{INK_MUTED.hexval()}'>{detail}</font><br/>"
+                f"<font color='{BRAND_SOFT.hexval()}'>{page}</font>",
                 s["tag_detail"]
             )]],
             colWidths=[6.3 * inch],
@@ -134,9 +138,9 @@ def build_pdf(data):
     )
     story = []
 
-    story.append(Paragraph(f"Website Audit — {data.get('site_label', '')}", s["title"]))
-    meta = (f"{data.get('seed_url', '')} &nbsp;·&nbsp; {data.get('generated_at', '')} &nbsp;·&nbsp; "
-            f"{data.get('pages_ok', 0)}/{data.get('pages_crawled', 0)} pages reachable")
+    story.append(Paragraph(f"Website Audit — {_esc(str(data.get('site_label', '')))}", s["title"]))
+    meta = (f"{_esc(str(data.get('seed_url', '')))} &nbsp;·&nbsp; {_esc(str(data.get('generated_at', '')))} "
+            f"&nbsp;·&nbsp; {data.get('pages_ok', 0)}/{data.get('pages_crawled', 0)} pages reachable")
     story.append(Paragraph(meta, s["subtitle"]))
     story.append(HRFlowable(width="100%", thickness=1, color=BORDER, spaceAfter=16))
 

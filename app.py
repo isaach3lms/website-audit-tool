@@ -140,7 +140,12 @@ def audit_pdf():
     except (json.JSONDecodeError, TypeError):
         return "Invalid report data.", 400
 
-    pdf_bytes = pdf_report.build_pdf(data)
+    try:
+        pdf_bytes = pdf_report.build_pdf(data)
+    except Exception:
+        app.logger.exception("PDF generation failed")
+        return "Couldn't generate the PDF for this report. Please try running the audit again.", 500
+
     filename = f"audit-{data.get('site_label', 'report').replace('.', '-')}.pdf"
     return send_file(
         io.BytesIO(pdf_bytes),
