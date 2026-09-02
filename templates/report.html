@@ -28,14 +28,64 @@
         <input type="hidden" name="report_data" id="report-data-input">
         <button type="submit" class="btn-primary">Download PDF</button>
       </form>
+      <button type="button" id="email-toggle-btn" class="btn-ghost">Email to prospect</button>
       <a href="/" class="btn-ghost">New inspection</a>
     </div>
   </header>
+
+  <section id="email-box" class="email-box" hidden>
+    <div class="email-box-row">
+      <input type="email" id="email-to" placeholder="prospect@example.com">
+      <input type="text" id="email-note" placeholder="Optional note (shown in the email body)">
+    </div>
+    <div class="email-box-row">
+      <input type="password" id="email-access-code" placeholder="Access code">
+      <button type="button" id="email-send-btn" class="btn-primary">Send</button>
+    </div>
+    <div id="email-status" class="email-status"></div>
+  </section>
+
   <script type="application/json" id="report-data-json">{{ report_data | tojson }}</script>
   <script>
     document.getElementById('pdf-form').addEventListener('submit', function () {
       document.getElementById('report-data-input').value =
         document.getElementById('report-data-json').textContent;
+    });
+
+    document.getElementById('email-toggle-btn').addEventListener('click', function () {
+      var box = document.getElementById('email-box');
+      box.hidden = !box.hidden;
+    });
+
+    document.getElementById('email-send-btn').addEventListener('click', async function () {
+      var to = document.getElementById('email-to').value.trim();
+      var note = document.getElementById('email-note').value.trim();
+      var code = document.getElementById('email-access-code').value;
+      var statusEl = document.getElementById('email-status');
+
+      if (!to) {
+        statusEl.textContent = 'Enter an email address.';
+        statusEl.className = 'email-status email-status-fail';
+        return;
+      }
+
+      statusEl.textContent = 'Sending…';
+      statusEl.className = 'email-status';
+
+      var reportData = document.getElementById('report-data-json').textContent;
+      var body = new URLSearchParams({
+        report_data: reportData, to_email: to, note: note, access_code: code
+      });
+
+      try {
+        var resp = await fetch('/audit/email', { method: 'POST', body: body });
+        var text = await resp.text();
+        statusEl.textContent = text;
+        statusEl.className = resp.ok ? 'email-status email-status-ok' : 'email-status email-status-fail';
+      } catch (err) {
+        statusEl.textContent = 'Failed to send — check your connection and try again.';
+        statusEl.className = 'email-status email-status-fail';
+      }
     });
   </script>
 
@@ -60,9 +110,28 @@
       <div class="stamp-score">{{ links_score if links_score is not none else '—' }}</div>
       <div class="stamp-label">LINKS · {{ links_grade }}</div>
     </div>
+    <div class="stamp stamp-{{ 'pass' if ministry_score and ministry_score>=80 else ('warn' if ministry_score and ministry_score>=60 else 'fail') }}">
+      <div class="stamp-score">{{ ministry_score if ministry_score is not none else '—' }}</div>
+      <div class="stamp-label">MINISTRY · {{ ministry_grade }}</div>
+    </div>
   </section>
 
-  <p class="design-note">"Design &amp; Polish" is a heuristic signal (responsiveness, custom type, palette, motion, brand completeness) — not a taste judgment. Treat it as a prompt to look closer, not a verdict.</p>
+  {% if exec_summary %}
+  <section class="exec-summary">
+    <h2>Top priorities</h2>
+    {% for item in exec_summary %}
+    <div class="exec-item">
+      <span class="exec-num">{{ loop.index }}</span>
+      <div>
+        <div class="exec-label">{{ item.label }} <span class="exec-category">({{ item.category }})</span></div>
+        <div class="exec-detail">{{ item.detail }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  <p class="design-note">"Design &amp; Polish" is a heuristic signal (responsiveness, custom type, palette, motion, brand completeness) — not a taste judgment. "Ministry" checks are business-relevant signals specific to church/ministry sites (giving, service times, sermons, staff, analytics) — always warn-level, never a hard fail, since they're opportunities, not technical breakage. Treat both as a prompt to look closer, not a verdict.</p>
 
   {% macro section(title, tag, issues, counts) %}
   <section class="findings">
@@ -91,6 +160,7 @@
   </section>
   {% endmacro %}
 
+  {{ section("Ministry Essentials", "ministry", ministry_issues, ministry_counts) }}
   {{ section("SEO", "SEO", seo_issues, seo_counts) }}
   {{ section("Performance", "performance", perf_issues, perf_counts) }}
   {{ section("Design & Polish", "design", design_issues, design_counts) }}

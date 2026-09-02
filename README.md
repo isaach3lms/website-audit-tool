@@ -5,6 +5,9 @@ A local web app that crawls a site (same domain, breadth-first) and reports on:
 - **SEO** — titles, meta descriptions, heading structure, alt text, canonical tags, Open Graph tags, robots.txt, sitemap.xml
 - **Performance** — response time, HTML payload size, compression, caching headers, render-blocking scripts, image dimensions, script count
 - **Design & Polish** — responsive viewport, favicon, custom typography, color palette signals, motion/interactivity, visual density
+- **Links** — every internal/external link found across crawled pages, checked for broken (4xx/5xx) or unreachable targets
+- **Ministry Essentials** — church/ministry-specific signals a generic tool wouldn't check: giving/donate link, service times, physical location, sermon archive, staff/leadership bios, analytics tracking present
+- **Top priorities** — an executive summary of the 5 highest-impact findings across every category, for a client-facing deliverable
 
 These are heuristic, request-level checks (no headless browser), so treat scores as *directional* — a prompt for where to look closer, not a lab-grade Lighthouse report.
 
@@ -16,6 +19,25 @@ python app.py
 ```
 
 Then open **http://127.0.0.1:5000** and enter a URL.
+
+## Emailing a report to a prospect
+
+The report page has an "Email to prospect" button that sends the PDF as an attachment via SMTP. Configure it with environment variables (set these on Render under Settings → Environment, or in your local shell for testing):
+
+```
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=you@yourdomain.com
+SMTP_PASSWORD=your-app-password        # NOT your regular account password — generate an app password
+SMTP_FROM=you@yourdomain.com            # optional, defaults to SMTP_USER
+FROM_NAME=Between Sundays               # optional
+EMAIL_ACCESS_CODE=pick-a-passphrase     # required — see note below
+```
+
+For Gmail specifically: enable 2-factor auth on the sending account, then generate an **App Password** (myaccount.google.com/apppasswords) — use that as `SMTP_PASSWORD`, not your normal login password.
+
+**Why `EMAIL_ACCESS_CODE` exists:** this app has no login/auth (see Security notes below), and an open "email anyone a PDF" endpoint on a public URL is exactly the kind of thing spammers scan for. The email form won't send anything unless the person using it enters this code, which only you know. Without `EMAIL_ACCESS_CODE` set, the email feature returns a clear "not configured" message instead of silently failing.
+
 
 ## How it works
 

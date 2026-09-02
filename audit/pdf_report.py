@@ -14,7 +14,7 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Flowable
 )
 
 INK = colors.HexColor("#0B1026")
@@ -32,6 +32,28 @@ FAIL = colors.HexColor("#D0361E")
 FAIL_BG = colors.HexColor("#FCEBE7")
 
 _STATUS_COLORS = {"pass": (PASS, PASS_BG), "warn": (WARN, WARN_BG), "fail": (FAIL, FAIL_BG)}
+
+
+class BSMark(Flowable):
+    """Vector-drawn 'bs' logo mark — rounded square, brand navy fill, white
+    wordmark — so the PDF carries the Between Sundays mark without needing an
+    external image asset to keep on disk or ship with the repo."""
+
+    def __init__(self, size=34):
+        super().__init__()
+        self.size = size
+        self.width = size
+        self.height = size
+
+    def draw(self):
+        c = self.canv
+        c.saveState()
+        c.setFillColor(BRAND_SOFT)
+        c.roundRect(0, 0, self.size, self.size, self.size * 0.26, fill=1, stroke=0)
+        c.setFillColor(colors.white)
+        c.setFont("Helvetica-Bold", self.size * 0.46)
+        c.drawCentredString(self.size / 2, self.size * 0.3, "bs")
+        c.restoreState()
 
 
 def _band_color(score):
@@ -60,6 +82,7 @@ def _styles():
         "all_clear": ParagraphStyle("AllClear", parent=base["Normal"], fontSize=9.5, textColor=PASS, leading=13),
         "table_head": ParagraphStyle("TableHead", parent=base["Normal"], fontName="Courier", fontSize=8, textColor=INK_MUTED),
         "table_cell": ParagraphStyle("TableCell", parent=base["Normal"], fontName="Courier", fontSize=8, textColor=INK, wordWrap="CJK"),
+        "summary_item": ParagraphStyle("SummaryItem", parent=base["Normal"], fontSize=10.5, textColor=INK, leading=15),
     }
 
 
@@ -81,6 +104,34 @@ def _score_tile(label, score, grade, s):
         ("RIGHTPADDING", (0, 0), (-1, -1), 12),
     ]))
     return inner
+
+
+def _executive_summary(exec_summary, story, s):
+    if not exec_summary:
+        return
+    story.append(Paragraph("Top priorities", s["h2"]))
+    rows = []
+    for i, item in enumerate(exec_summary, 1):
+        status = item.get("status", "warn")
+        color = FAIL if status == "fail" else WARN
+        label = _esc(str(item.get("label", "")))
+        detail = _esc(str(item.get("detail", "")))
+        category = _esc(str(item.get("category", "")))
+        text = (f"<font color='{color.hexval()}'><b>{i}.</b></font> "
+                f"<b>{label}</b> <font color='{INK_MUTED.hexval()}'>({category})</font><br/>"
+                f"<font color='{INK_MUTED.hexval()}'>{detail}</font>")
+        rows.append([Paragraph(text, s["summary_item"])])
+    table = Table(rows, colWidths=[6.3 * inch])
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), BRAND_TINT),
+        ("BOX", (0, 0), (-1, -1), 0.75, BORDER),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.5, BORDER),
+    ]))
+    story.append(table)
+    story.append(Spacer(1, 8))
 
 
 def _findings_section(title, issues, counts, story, s):
@@ -138,7 +189,15 @@ def build_pdf(data):
     )
     story = []
 
-    story.append(Paragraph(f"Website Audit — {_esc(str(data.get('site_label', '')))}", s["title"]))
+    header_text = Table(
+        [[Paragraph(f"Website Audit — {_esc(str(data.get('site_label', '')))}", s["title"])]],
+        colWidths=[5.5 * inch],
+    )
+    header_text.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 10)]))
+    header_row = Table([[BSMark(34), header_text]], colWidths=[0.5 * inch, 5.5 * inch])
+    header_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
+    story.append(header_row)
+
     meta = (f"{_esc(str(data.get('seed_url', '')))} &nbsp;·&nbsp; {_esc(str(data.get('generated_at', '')))} "
             f"&nbsp;·&nbsp; {data.get('pages_ok', 0)}/{data.get('pages_crawled', 0)} pages reachable")
     story.append(Paragraph(meta, s["subtitle"]))
@@ -150,17 +209,23 @@ def build_pdf(data):
         _score_tile("PERFORMANCE", data.get("perf_score"), data.get("perf_grade"), s),
         _score_tile("DESIGN & POLISH", data.get("design_score"), data.get("design_grade"), s),
         _score_tile("LINKS", data.get("links_score"), data.get("links_grade"), s),
+        _score_tile("MINISTRY", data.get("ministry_score"), data.get("ministry_grade"), s),
     ]
-    tile_row = Table([tiles], colWidths=[1.34 * inch] * 5, hAlign="LEFT")
+    tile_row = Table([tiles], colWidths=[1.13 * inch] * 6, hAlign="LEFT")
     tile_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story.append(tile_row)
     story.append(Spacer(1, 12))
     story.append(Paragraph(
         "\"Design &amp; Polish\" is a heuristic signal (responsiveness, custom type, palette, motion, "
-        "brand completeness) — not a taste judgment.",
+        "brand completeness) — not a taste judgment. \"Ministry\" checks are business-relevant "
+        "signals specific to church/ministry sites, not technical pass/fail.",
         s["note"]
     ))
+    story.append(Spacer(1, 6))
 
+    _executive_summary(data.get("exec_summary", []), story, s)
+
+    _findings_section("Ministry Essentials", data.get("ministry_issues", []), data.get("ministry_counts", {}), story, s)
     _findings_section("SEO", data.get("seo_issues", []), data.get("seo_counts", {}), story, s)
     _findings_section("Performance", data.get("perf_issues", []), data.get("perf_counts", {}), story, s)
     _findings_section("Design &amp; Polish", data.get("design_issues", []), data.get("design_counts", {}), story, s)
