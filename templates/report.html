@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Inspection Report — {{ site_label }}</title>
+<title>Website Audit — {{ site_label }}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body class="blueprint-bg">
@@ -13,7 +13,7 @@
 
   <header class="report-header">
     <div>
-      <div class="intake-tag">INSPECTION REPORT</div>
+      <div class="intake-tag"><span class="bs-mark">bs</span>WEBSITE AUDIT</div>
       <h1>{{ site_label }}</h1>
       <div class="report-meta">
         <span>{{ seed_url }}</span>

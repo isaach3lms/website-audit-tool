@@ -17,19 +17,19 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 )
 
-INK = colors.HexColor("#1C2E22")
-INK_SOFT = colors.HexColor("#274435")
-INK_MUTED = colors.HexColor("#5E6C61")
-BRAND = colors.HexColor("#274435")
-BRAND_SOFT = colors.HexColor("#A5AE9E")
-BRAND_TINT = colors.HexColor("#EDEFE9")
-BORDER = colors.HexColor("#E3E7DF")
-PASS = colors.HexColor("#2F8F5B")
-PASS_BG = colors.HexColor("#EAF6EE")
+INK = colors.HexColor("#0B1026")
+INK_SOFT = colors.HexColor("#0B1026")
+INK_MUTED = colors.HexColor("#5A6482")
+BRAND = colors.HexColor("#2563FF")
+BRAND_SOFT = colors.HexColor("#1E3A8A")
+BRAND_TINT = colors.HexColor("#E6EEFF")
+BORDER = colors.HexColor("#DCE5F7")
+PASS = colors.HexColor("#16924F")
+PASS_BG = colors.HexColor("#E7F7EE")
 WARN = colors.HexColor("#B4790E")
 WARN_BG = colors.HexColor("#FBF1DD")
-FAIL = colors.HexColor("#C1440E")
-FAIL_BG = colors.HexColor("#FBEAE2")
+FAIL = colors.HexColor("#D0361E")
+FAIL_BG = colors.HexColor("#FCEBE7")
 
 _STATUS_COLORS = {"pass": (PASS, PASS_BG), "warn": (WARN, WARN_BG), "fail": (FAIL, FAIL_BG)}
 
