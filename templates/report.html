@@ -89,35 +89,19 @@
     });
   </script>
 
+  {% macro band(score) %}{{ 'pass' if score and score>=80 else ('warn' if score and score>=60 else 'fail') }}{% endmacro %}
+
   <section class="stamp-row">
-    <div class="stamp stamp-overall stamp-{{ 'pass' if overall_score and overall_score>=80 else ('warn' if overall_score and overall_score>=60 else 'fail') }}">
+    <div class="stamp stamp-overall stamp-{{ band(overall_score) }}">
       <div class="stamp-score">{{ overall_score if overall_score is not none else '—' }}</div>
-      <div class="stamp-label">OVERALL</div>
+      <div class="stamp-label">OVERALL · {{ overall_grade }}</div>
     </div>
-    <div class="stamp stamp-{{ 'pass' if seo_score and seo_score>=80 else ('warn' if seo_score and seo_score>=60 else 'fail') }}">
-      <div class="stamp-score">{{ seo_score if seo_score is not none else '—' }}</div>
-      <div class="stamp-label">SEO · {{ seo_grade }}</div>
-    </div>
-    <div class="stamp stamp-{{ 'pass' if perf_score and perf_score>=80 else ('warn' if perf_score and perf_score>=60 else 'fail') }}">
-      <div class="stamp-score">{{ perf_score if perf_score is not none else '—' }}</div>
-      <div class="stamp-label">PERFORMANCE · {{ perf_grade }}</div>
-    </div>
-    <div class="stamp stamp-{{ 'pass' if design_score and design_score>=80 else ('warn' if design_score and design_score>=60 else 'fail') }}">
-      <div class="stamp-score">{{ design_score if design_score is not none else '—' }}</div>
-      <div class="stamp-label">DESIGN &amp; POLISH · {{ design_grade }}</div>
-    </div>
-    <div class="stamp stamp-{{ 'pass' if links_score and links_score>=80 else ('warn' if links_score and links_score>=60 else 'fail') }}">
-      <div class="stamp-score">{{ links_score if links_score is not none else '—' }}</div>
-      <div class="stamp-label">LINKS · {{ links_grade }}</div>
-    </div>
-    <div class="stamp stamp-{{ 'pass' if ministry_score and ministry_score>=80 else ('warn' if ministry_score and ministry_score>=60 else 'fail') }}">
-      <div class="stamp-score">{{ ministry_score if ministry_score is not none else '—' }}</div>
-      <div class="stamp-label">MINISTRY · {{ ministry_grade }}</div>
-    </div>
-    <div class="stamp stamp-{{ 'pass' if guest_score and guest_score>=80 else ('warn' if guest_score and guest_score>=60 else 'fail') }}">
-      <div class="stamp-score">{{ guest_score if guest_score is not none else '—' }}</div>
-      <div class="stamp-label">GUEST EXPERIENCE · {{ guest_grade }}</div>
-    </div>
+    {% for area in areas %}
+    <a class="stamp stamp-link stamp-{{ band(area.score) }}" href="#area-{{ area.key }}">
+      <div class="stamp-score">{{ area.score if area.score is not none else '—' }}</div>
+      <div class="stamp-label">{{ area.name | upper }} · {{ area.grade }}</div>
+    </a>
+    {% endfor %}
   </section>
 
   {% if exec_summary %}
@@ -135,74 +119,48 @@
   </section>
   {% endif %}
 
-  <p class="design-note">"Design &amp; Polish" is a heuristic signal (responsiveness, custom type, palette, motion, brand completeness) — not a taste judgment. "Ministry" checks are business-relevant signals specific to church/ministry sites (giving, service times, sermons, staff, analytics) — always warn-level, never a hard fail, since they're opportunities, not technical breakage. Treat both as a prompt to look closer, not a verdict.</p>
+  <p class="design-note">The audit is organized around four questions: can a first-time visitor understand the church at a glance, does the site answer their questions, does it work and look right on a phone, and can people find it and use it. Scores are heuristic signals from the site's text, markup, and (when configured) Google PageSpeed, not a verdict. Visitor-facing items are opportunities, never hard failures, so treat them as a prompt to look closer. Anything that lives only on a page outside the {{ pages_ok }} reachable page(s) crawled will look missing.</p>
 
-  {% macro section(title, tag, issues, counts) %}
-  <section class="findings">
-    <div class="findings-head">
-      <h2>{{ title }}</h2>
-      <div class="count-chip">
-        <span class="dot dot-pass"></span>{{ counts.pass }} pass
-        <span class="dot dot-warn"></span>{{ counts.warn }} notice
-        <span class="dot dot-fail"></span>{{ counts.fail }} issue
+  {% for area in areas %}
+  <section class="area" id="area-{{ area.key }}">
+    <div class="area-head">
+      <div>
+        <h2>{{ area.name }}</h2>
+        <p class="area-sub">{{ area.subtitle }}</p>
+      </div>
+      <div class="area-score stamp-{{ band(area.score) }}">
+        <span class="area-score-num">{{ area.score if area.score is not none else '—' }}</span>
+        <span class="area-score-grade">{{ area.grade }}</span>
       </div>
     </div>
-    {% if issues %}
-      {% for i in issues %}
-      <div class="annotation annotation-{{ i.status }}">
-        <div class="annotation-tag">{{ 'ISSUE' if i.status == 'fail' else 'NOTICE' }}</div>
-        <div class="annotation-body">
-          <div class="annotation-label">{{ i.label }}</div>
-          <div class="annotation-detail">{{ i.detail }}</div>
-          <div class="annotation-page">{{ i.page }}</div>
+
+    {% for sg in area.subgroups %}
+    <div class="subgroup">
+      <h3 class="guest-group">{{ sg.name }}<span class="guest-group-sub">{{ sg.subtitle }}</span>
+        <span class="sg-counts">{{ sg.counts.pass }} pass · {{ sg.counts.warn }} notice · {{ sg.counts.fail }} issue{% if sg.score is not none %} · {{ sg.score }} ({{ sg.grade }}){% endif %}</span>
+      </h3>
+      {% if sg.note %}<div class="sg-note">{{ sg.note }}</div>{% endif %}
+      {% if sg.issues %}
+        {% for i in sg.issues %}
+        <div class="annotation annotation-{{ i.status }}">
+          <div class="annotation-tag">{{ 'PASS' if i.status == 'pass' else ('ISSUE' if i.status == 'fail' else 'NOTICE') }}</div>
+          <div class="annotation-body">
+            <div class="annotation-label">{{ i.label }}</div>
+            <div class="annotation-detail">{{ i.detail }}</div>
+            <div class="annotation-page">{{ i.page }}</div>
+          </div>
         </div>
-      </div>
-      {% endfor %}
-    {% else %}
-      <div class="all-clear">No {{ tag }} issues found across the crawled pages.</div>
-    {% endif %}
-  </section>
-  {% endmacro %}
-
-  {{ section("Ministry Essentials", "ministry", ministry_issues, ministry_counts) }}
-
-  {% if guest_groups %}
-  <section class="findings guest-review">
-    <div class="findings-head">
-      <h2>Guest Experience Review</h2>
-      <div class="count-chip">
-        <span class="dot dot-pass"></span>{{ guest_counts.pass }} pass
-        <span class="dot dot-warn"></span>{{ guest_counts.warn }} notice
-      </div>
-    </div>
-    <p class="guest-intro">Could a nervous first-time visitor decide to walk in using only this website? Every check is shown, passes included.</p>
-    {% for group in guest_groups %}
-    <h3 class="guest-group">{{ group.name }}<span class="guest-group-sub">{{ group.subtitle }}</span></h3>
-    {% for i in group.checks %}
-    <div class="annotation annotation-{{ i.status }}">
-      <div class="annotation-tag">{{ 'PASS' if i.status == 'pass' else ('ISSUE' if i.status == 'fail' else 'NOTICE') }}</div>
-      <div class="annotation-body">
-        <div class="annotation-label">{{ i.label }}</div>
-        <div class="annotation-detail">{{ i.detail }}</div>
-        <div class="annotation-page">{{ i.page }}</div>
-      </div>
+        {% endfor %}
+      {% elif not sg.note %}
+        <div class="all-clear">No issues found across the crawled pages.</div>
+      {% endif %}
+      {% if sg.name == 'Links, Forms and Embeds' %}
+      <p class="design-note sg-foot">Checked {{ links_checked }} of {{ links_total }} unique links found across crawled pages (internal and external).{% if links_skipped %} {{ links_skipped }} link(s) skipped past the {{ links_checked }}-link check limit.{% endif %} Broken internal links are flagged as issues; broken external links are flagged as notices, since that is the destination site's problem.</p>
+      {% endif %}
     </div>
     {% endfor %}
-    {% endfor %}
-    <p class="design-note guest-note">The guest review reads text, links, and image names across the {{ pages_ok }} reachable page(s) crawled. Anything that lives only on a page outside the crawl will look missing, and photo authenticity cannot be confirmed from code, so confirm by eye. Like the Ministry checks, these are opportunities, never hard failures.</p>
   </section>
-  {% endif %}
-  {{ section("SEO", "SEO", seo_issues, seo_counts) }}
-  {{ section("Performance", "performance", perf_issues, perf_counts) }}
-  {{ section("Design & Polish", "design", design_issues, design_counts) }}
-
-  {{ section("Links", "link", link_issues, links_counts) }}
-  <p class="design-note" style="margin-top:-28px;">
-    Checked {{ links_checked }} of {{ links_total }} unique links found across crawled pages
-    (internal and external).
-    {% if links_skipped %}{{ links_skipped }} link(s) skipped past the {{ links_checked }}-link check limit.{% endif %}
-    Broken internal links are flagged as issues; broken external links are flagged as notices, since that's the destination site's problem.
-  </p>
+  {% endfor %}
 
   <section class="findings">
     <div class="findings-head"><h2>Pages crawled</h2></div>

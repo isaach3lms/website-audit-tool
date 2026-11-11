@@ -163,55 +163,45 @@ def _issue_card(issue, s):
     return cell
 
 
-def _guest_section(groups, counts, pages_ok, story, s):
-    """Guest Experience Review: every check shown (passes included), grouped."""
-    if not groups:
-        return
-    chip = (f"<font color='#2F8F5B'>{counts.get('pass', 0)} pass</font>  "
-            f"<font color='#B4790E'>{counts.get('warn', 0)} notice</font>")
+def _area_section(area, story, s):
+    """One scored area: heading, then each sub-section with its findings."""
+    score = area.get("score")
+    color, _ = _band_color(score)
+    score_txt = f"{score} ({_esc(str(area.get('grade', '')))})" if score is not None else "n/a"
     head = [
-        Paragraph("Guest Experience Review", s["h2"]),
-        Paragraph(chip, s["note"]),
-        Paragraph("Could a nervous first-time visitor decide to walk in using only this website? "
-                  "Every check is shown, passes included.", s["note"]),
+        Paragraph(f"{_esc(str(area.get('name', '')))} "
+                  f"<font color='{color.hexval()}' size='12'>{score_txt}</font>", s["h2"]),
+        Paragraph(_esc(str(area.get("subtitle", ""))), s["note"]),
         Spacer(1, 4),
     ]
-    for group in groups:
+    for sg in area.get("subgroups", []):
+        counts = sg.get("counts", {})
+        sg_score = sg.get("score")
+        chip = (f"{counts.get('pass', 0)} pass, {counts.get('warn', 0)} notice, {counts.get('fail', 0)} issue"
+                + (f", score {sg_score}" if sg_score is not None else ""))
         head.append(Paragraph(
-            f"{_esc(str(group.get('name', '')))} "
-            f"<font color='{INK_MUTED.hexval()}' size='8.5'>{_esc(str(group.get('subtitle', '')))}</font>",
+            f"{_esc(str(sg.get('name', '')))} "
+            f"<font color='{INK_MUTED.hexval()}' size='8.5'>{_esc(str(sg.get('subtitle', '')))}</font>",
             s["group_head"]))
-        for n, issue in enumerate(group.get("checks", [])):
-            card = [_issue_card(issue, s), Spacer(1, 6)]
-            if n == 0:
-                # a heading never ends a page on its own: it travels with its first card
-                story.append(KeepTogether(head + card))
-                head = []
+        head.append(Paragraph(chip, s["note"]))
+        if sg.get("note"):
+            head.append(Paragraph(_esc(str(sg["note"])), s["note"]))
+            head.append(Spacer(1, 3))
+        issues = sg.get("issues", [])
+        if not issues:
+            if not sg.get("note"):
+                story.append(KeepTogether(head + [Paragraph("No issues found across the crawled pages.", s["all_clear"]),
+                                                  Spacer(1, 6)]))
             else:
-                story.extend(card)
-    story.append(Paragraph(
-        f"Based on text, links, and image names across the {int(pages_ok or 0)} reachable page(s) crawled. "
-        "Anything that lives only on a page outside the crawl will look missing, and photo authenticity "
-        "cannot be confirmed from code, so confirm by eye.", s["note"]))
-    story.append(Spacer(1, 8))
-
-
-def _findings_section(title, issues, counts, story, s):
-    chip = (f"<font color='#2F8F5B'>{counts.get('pass', 0)} pass</font>  "
-            f"<font color='#B4790E'>{counts.get('warn', 0)} notice</font>  "
-            f"<font color='#C1440E'>{counts.get('fail', 0)} issue</font>")
-    head = [Paragraph(title, s["h2"]), Paragraph(chip, s["note"]), Spacer(1, 6)]
-
-    if not issues:
-        story.append(KeepTogether(head + [Paragraph("No issues found across the crawled pages.", s["all_clear"])]))
-        story.append(Spacer(1, 10))
-        return
-
-    # keep the heading with the first card so it never sits alone at a page bottom
-    story.append(KeepTogether(head + [_issue_card(issues[0], s), Spacer(1, 6)]))
-    for issue in issues[1:]:
-        story.append(_issue_card(issue, s))
-        story.append(Spacer(1, 6))
+                story.append(KeepTogether(head))
+            head = []
+            continue
+        # a heading never ends a page on its own: it travels with its first card
+        story.append(KeepTogether(head + [_issue_card(issues[0], s), Spacer(1, 6)]))
+        head = []
+        for issue in issues[1:]:
+            story.append(_issue_card(issue, s))
+            story.append(Spacer(1, 6))
     story.append(Spacer(1, 8))
 
 
@@ -223,12 +213,12 @@ def build_pdf(data):
         buf, pagesize=letter,
         topMargin=0.7 * inch, bottomMargin=0.7 * inch,
         leftMargin=0.75 * inch, rightMargin=0.75 * inch,
-        title=f"Website Audit — {data.get('site_label', '')}",
+        title=f"Website Audit - {data.get('site_label', '')}",
     )
     story = []
 
     header_text = Table(
-        [[Paragraph(f"Website Audit — {_esc(str(data.get('site_label', '')))}", s["title"])]],
+        [[Paragraph(f"Website Audit: {_esc(str(data.get('site_label', '')))}", s["title"])]],
         colWidths=[5.5 * inch],
     )
     header_text.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 10)]))
@@ -236,43 +226,31 @@ def build_pdf(data):
     header_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
     story.append(header_row)
 
-    meta = (f"{_esc(str(data.get('seed_url', '')))} &nbsp;·&nbsp; {_esc(str(data.get('generated_at', '')))} "
-            f"&nbsp;·&nbsp; {data.get('pages_ok', 0)}/{data.get('pages_crawled', 0)} pages reachable")
+    meta = (f"{_esc(str(data.get('seed_url', '')))} &nbsp;&middot;&nbsp; {_esc(str(data.get('generated_at', '')))} "
+            f"&nbsp;&middot;&nbsp; {data.get('pages_ok', 0)}/{data.get('pages_crawled', 0)} pages reachable")
     story.append(Paragraph(meta, s["subtitle"]))
     story.append(HRFlowable(width="100%", thickness=1, color=BORDER, spaceAfter=16))
 
-    w = 1.7 * inch
-    tiles = [
-        _score_tile("OVERALL", data.get("overall_score"), None, s, w),
-        _score_tile("SEO", data.get("seo_score"), data.get("seo_grade"), s, w),
-        _score_tile("PERFORMANCE", data.get("perf_score"), data.get("perf_grade"), s, w),
-        _score_tile("DESIGN & POLISH", data.get("design_score"), data.get("design_grade"), s, w),
-        _score_tile("LINKS", data.get("links_score"), data.get("links_grade"), s, w),
-        _score_tile("MINISTRY", data.get("ministry_score"), data.get("ministry_grade"), s, w),
-        _score_tile("GUEST EXPERIENCE", data.get("guest_score"), data.get("guest_grade"), s, w),
-    ]
-    for row in (tiles[:4], tiles[4:]):
-        tile_row = Table([row], colWidths=[1.75 * inch] * len(row), hAlign="LEFT")
-        tile_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
-        story.append(tile_row)
-        story.append(Spacer(1, 8))
+    areas = data.get("areas", [])
+    short = {"visitor": "FIRST-TIME VISITOR", "content": "CONTENT", "ux": "UX AND DESIGN", "technical": "TECHNICAL AND SEO"}
+    tiles = [_score_tile("OVERALL", data.get("overall_score"), data.get("overall_grade"), s, 1.3 * inch)]
+    for a in areas:
+        tiles.append(_score_tile(short.get(a.get("key"), str(a.get("name", "")).upper()), a.get("score"),
+                                 a.get("grade"), s, 1.3 * inch))
+    tile_row = Table([tiles], colWidths=[1.4 * inch] * len(tiles), hAlign="LEFT")
+    tile_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    story.append(tile_row)
     story.append(Spacer(1, 12))
     story.append(Paragraph(
-        "\"Design &amp; Polish\" is a heuristic signal (responsiveness, custom type, palette, motion, "
-        "brand completeness) — not a taste judgment. \"Ministry\" and \"Guest Experience\" checks are "
-        "business-relevant signals specific to church/ministry sites, not technical pass/fail.",
-        s["note"]
-    ))
+        "Scores are heuristic signals from the site's text, markup, and Google PageSpeed when configured, "
+        "not a verdict. Visitor-facing items are opportunities, never hard failures. Anything that lives only "
+        "on a page outside the crawl will look missing.", s["note"]))
     story.append(Spacer(1, 6))
 
     _executive_summary(data.get("exec_summary", []), story, s)
 
-    _findings_section("Ministry Essentials", data.get("ministry_issues", []), data.get("ministry_counts", {}), story, s)
-    _guest_section(data.get("guest_groups", []), data.get("guest_counts", {}), data.get("pages_ok"), story, s)
-    _findings_section("SEO", data.get("seo_issues", []), data.get("seo_counts", {}), story, s)
-    _findings_section("Performance", data.get("perf_issues", []), data.get("perf_counts", {}), story, s)
-    _findings_section("Design &amp; Polish", data.get("design_issues", []), data.get("design_counts", {}), story, s)
-    _findings_section("Links", data.get("link_issues", []), data.get("links_counts", {}), story, s)
+    for area in areas:
+        _area_section(area, story, s)
 
     doc.build(story)
     return buf.getvalue()

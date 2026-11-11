@@ -35,12 +35,14 @@ STRONG_HOME = """
   <a href="/visit">Plan Your Visit</a><a href="/beliefs">What We Believe</a><a href="/kids">Kids</a>
 </nav></header>
 <h1>Welcome to Grace Church</h1>
+<p>A Baptist church in Raleigh, NC.</p>
 <p>Join us Sundays at 9:00 am and 10:45 am for worship. Doors open at 8:30 with free coffee,
 and kids check-in opens 15 minutes before each service.</p>
 <p>Visit us at 1200 Oak Street, Raleigh, NC 27601.
 <a href="https://www.google.com/maps/place/1200+Oak+Street">Get directions</a>.
-Park in the east lot and use the main entrance by the fountain.</p>
+Park in the east lot and use the main entrance by the fountain. The building is wheelchair accessible with reserved parking and hearing assistance.</p>
 <p>Our Sunday service lasts about 75 minutes.</p>
+<p>Wednesday Night Prayer at 7:00 pm. Christmas Eve services at 5:00 pm and 7:00 pm.</p>
 <p>Come as you are. Jeans are great, so is your Sunday best.</p>
 <p>Worship is led by a live band with modern songs and a few hymns. Lyrics are on the screens so you can sing along.</p>
 <p>You will never be asked to stand up or introduce yourself. No pressure, ever.</p>
@@ -63,7 +65,7 @@ background check. Kids go to their own class during the service, and students in
 
 STRONG_BELIEFS = """
 <html><head><title>Beliefs</title></head><body>
-<h1>What We Believe</h1><p>Our statement of faith is simple.</p>
+<h1>What We Believe</h1><p>Our statement of faith is simple.</p><p>Our mission is to help people follow Jesus.</p>
 <h2>Meet Pastor Dave</h2><p>Hi, I'm Pastor Dave. Welcome! Here is my story.</p>
 <iframe src="https://www.youtube.com/embed/abc"></iframe>
 </body></html>
@@ -82,11 +84,12 @@ class StrongSiteTests(unittest.TestCase):
         self.issues = ge.check_site([page("/", STRONG_HOME), page("/visit", STRONG_VISIT), page("/beliefs", STRONG_BELIEFS)])
         self.r = by_id(self.issues)
 
-    def test_eleven_checks_in_three_groups(self):
-        self.assertEqual(len(self.issues), 11)
-        self.assertEqual(len({i["id"] for i in self.issues}), 11)
-        groups = ge.group_issues(self.issues)
-        self.assertEqual([len(g["checks"]) for g in groups], [3, 4, 4])
+    def test_fourteen_unique_checks_each_in_a_known_subsection(self):
+        from audit import structure
+        self.assertEqual(len(self.issues), 14)
+        self.assertEqual(len({i["id"] for i in self.issues}), 14)
+        known = {sg["name"] for a in structure.AREAS for sg in a["subgroups"]}
+        self.assertTrue(all(i["group"] in known for i in self.issues))
 
     def test_everything_passes(self):
         failing = {k: v["detail"] for k, v in self.r.items() if v["status"] != "pass"}
@@ -314,18 +317,189 @@ class IntegrationTests(unittest.TestCase):
             resp = client.post("/audit", data={"url": "gracechurch.example"})
             self.assertEqual(resp.status_code, 200)
             html = resp.get_data(as_text=True)
-            self.assertIn("Guest Experience Review", html)
-            self.assertIn("GUEST EXPERIENCE", html)
-            self.assertIn("Core Practical Details", html)
-            self.assertIn("Community and Culture", html)
+            for name in ("First-Time Visitor and Clarity", "Essential Content and Messaging",
+                         "User Experience and Design", "Technical Health and Local SEO"):
+                self.assertIn(name, html)
 
             # pull the embedded report JSON back out and render the PDF from it
             start = html.index('id="report-data-json">') + len('id="report-data-json">')
             data = json.loads(html[start:html.index("</script>", start)])
-            self.assertEqual(data["guest_score"], 100)
+            self.assertEqual(len(data["areas"]), 4)
+            self.assertIn("overall_score", data)
             pdf = client.post("/audit/pdf", data={"report_data": json.dumps(data)})
             self.assertEqual(pdf.status_code, 200)
             self.assertTrue(pdf.data.startswith(b"%PDF"))
+
+
+
+
+# ---------------------------------------------------------------------------
+# Four-area model: new modules
+# ---------------------------------------------------------------------------
+import datetime
+
+from audit import areas, dates, ux_checks, local_seo, sermon_media, pagespeed, accessibility_checks
+from audit.pagedoc import Doc
+
+TODAY = datetime.date(2026, 11, 1)
+
+
+def docs_for(*pairs):
+    return [Doc(page(path, html)) for path, html in pairs]
+
+
+class FiveSecondTests(unittest.TestCase):
+    def test_bare_home_is_partial_not_fail(self):
+        r = by_id(ge.check_site([page("/", BARE_HOME)]))["guest-five-second"]
+        self.assertEqual(r["status"], "warn")
+        self.assertLess(r["points"], 1.0)
+
+
+class DatesTests(unittest.TestCase):
+    def test_explicit_dates_parse(self):
+        found = dates.extract_dates("Join us March 3, 2024 or 2025-04-05 or 6 May 2023.")
+        self.assertEqual(len(found), 3)
+
+    def test_dates_without_year_are_ignored(self):
+        self.assertEqual(dates.extract_dates("Join us March 3 for lunch."), [])
+
+
+class SermonMediaTests(unittest.TestCase):
+    def test_no_sermon_section(self):
+        issue = sermon_media.check_site(docs_for(("/", BARE_HOME)), today=TODAY, fetch=lambda u: (200, 100, None))
+        self.assertEqual(issue["id"], "content-sermon-media")
+        self.assertEqual(issue["status"], "warn")
+
+    def test_working_sermon_link_passes_that_component(self):
+        html = '<html><body><nav><a href="/sermons">Sermons</a></nav><p>Hi</p></body></html>'
+        issue = sermon_media.check_site(docs_for(("/", html)), today=TODAY, fetch=lambda u: (200, 300, None))
+        self.assertGreater(issue["points"], 0)
+
+    def test_slow_sermon_link_is_flagged(self):
+        html = '<html><body><nav><a href="/sermons">Sermons</a></nav></body></html>'
+        slow = sermon_media.check_site(docs_for(("/", html)), today=TODAY, fetch=lambda u: (200, 5000, None))
+        fast = sermon_media.check_site(docs_for(("/", html)), today=TODAY, fetch=lambda u: (200, 200, None))
+        self.assertLess(slow["points"], fast["points"])
+
+
+class UxChecksTests(unittest.TestCase):
+    def test_mobile_nav_and_giving(self):
+        good = '<html><body><nav><button aria-label="Menu" class="menu-toggle"></button><a href="/a">A</a><a href="/b">B</a><a href="/give">Give</a></nav><a href="https://pushpay.com/g/x">Give</a></body></html>'
+        bad = "<html><body><p>Hello</p></body></html>"
+        self.assertGreater(ux_checks.check_mobile_nav_giving(docs_for(("/", good)))["points"],
+                           ux_checks.check_mobile_nav_giving(docs_for(("/", bad)))["points"])
+
+    def test_brand_consistency_needs_two_pages(self):
+        self.assertIsNone(ux_checks.check_brand_consistency(docs_for(("/", BARE_HOME))))
+
+    def test_embeds_none_without_iframes(self):
+        self.assertIsNone(ux_checks.check_embeds(docs_for(("/", BARE_HOME)), fetch=lambda u: (200, None)))
+
+    def test_broken_embed_fails(self):
+        html = '<html><body><iframe src="https://maps.example/embed"></iframe></body></html>'
+        r = ux_checks.check_embeds(docs_for(("/", html)), fetch=lambda u: (404, None))
+        self.assertEqual(r["status"], "fail")
+
+    def test_bot_blocked_embed_not_counted_broken(self):
+        html = '<html><body><iframe src="https://maps.example/embed"></iframe></body></html>'
+        r = ux_checks.check_embeds(docs_for(("/", html)), fetch=lambda u: (403, None))
+        self.assertNotEqual(r["status"], "fail")
+
+    def test_stale_event_and_copyright_year(self):
+        html = '<html><body><p>Fall retreat October 4, 2023</p><footer>Copyright 2021 Grace</footer></body></html>'
+        r = ux_checks.check_fresh_content(docs_for(("/", html)), today=TODAY)
+        self.assertNotEqual(r["status"], "pass")
+
+    def test_fresh_content_none_when_not_judgeable(self):
+        self.assertIsNone(ux_checks.check_fresh_content(docs_for(("/", BARE_HOME)), today=TODAY))
+
+
+class LocalSeoTests(unittest.TestCase):
+    def test_schema_and_gbp_link(self):
+        html = ('<html><head><title>Grace Church Raleigh</title><script type="application/ld+json">'
+                '{"@type":"Church","address":{"streetAddress":"1 Oak","addressLocality":"Raleigh"},"openingHours":"Su 09:00-10:00"}'
+                '</script></head><body><a href="https://g.page/gracechurch">Reviews</a><p>Call 919-555-0100</p></body></html>')
+        r = local_seo.check_google_profile(docs_for(("/", html)))
+        self.assertEqual(r["id"], "tech-google-profile")
+        self.assertGreaterEqual(r["points"], 0.75)
+
+    def test_google_profile_bare_site_scores_low(self):
+        r = local_seo.check_google_profile(docs_for(("/", BARE_HOME)))
+        self.assertLess(r["points"], 0.5)
+
+    def test_duplicate_titles(self):
+        same = "<html><head><title>Grace</title></head><body>x</body></html>"
+        r = local_seo.check_duplicate_titles(docs_for(("/", same), ("/a", same)))
+        self.assertNotEqual(r["status"], "pass")
+        self.assertIsNone(local_seo.check_duplicate_titles(docs_for(("/", same))))
+
+    def test_url_structure_flags_query_strings(self):
+        r = local_seo.check_url_structure(docs_for(("/", BARE_HOME), ("/?page_id=42", BARE_HOME)))
+        self.assertNotEqual(r["status"], "pass")
+
+
+class AccessibilityTests(unittest.TestCase):
+    def test_missing_lang_and_vague_link(self):
+        html = '<html><body><a href="/x">click here</a><input type="text"></body></html>'
+        ids = {i["id"] for i in accessibility_checks.check_page(page("/", html))}
+        self.assertTrue({"a11y-lang", "a11y-vague-links"} <= ids)
+
+
+LIGHTHOUSE = {"lighthouseResult": {
+    "categories": {"performance": {"score": 0.42}, "accessibility": {"score": 0.97}},
+    "audits": {"largest-contentful-paint": {"numericValue": 5200, "displayValue": "5.2 s", "score": 0.1},
+               "cumulative-layout-shift": {"numericValue": 0.02, "displayValue": "0.02", "score": 1},
+               "total-blocking-time": {"numericValue": 100, "displayValue": "100 ms", "score": 1},
+               "viewport": {"score": 1}}}}
+
+
+class PageSpeedTests(unittest.TestCase):
+    def test_no_key_gives_note_and_no_issues(self):
+        grouped, note = pagespeed.to_issues({"status": "no_key", "message": "x", "data": None}, BASE + "/")
+        self.assertEqual(sum(len(v) for v in grouped.values()), 0)
+        self.assertIn("PAGESPEED_API_KEY", note)
+
+    def test_fixture_maps_to_issues(self):
+        grouped, _ = pagespeed.to_issues({"status": "ok", "message": "", "data": LIGHTHOUSE}, BASE + "/")
+        flat = {i["id"]: i for v in grouped.values() for i in v}
+        self.assertIn("psi-performance", flat)
+        self.assertNotEqual(flat["psi-performance"]["status"], "pass")
+        self.assertEqual(flat["psi-accessibility"]["status"], "pass")
+
+    def test_error_and_timeout_do_not_raise(self):
+        for st in ("error", "timeout", "pending"):
+            grouped, note = pagespeed.to_issues({"status": st, "message": "boom", "data": None}, BASE + "/")
+            self.assertEqual(sum(len(v) for v in grouped.values()), 0)
+
+    def test_job_without_key(self):
+        job = pagespeed.PageSpeedJob(BASE + "/", None)
+        self.assertEqual(job.result(1)["status"], "no_key")
+
+
+class AreasTests(unittest.TestCase):
+    def _issue(self, id, status, group, points=None, page_url=BASE + "/", **kw):
+        d = {"id": id, "label": id, "status": status, "detail": "d", "page": page_url, "group": group}
+        if points is not None:
+            d["points"] = points
+        d.update(kw)
+        return d
+
+    def test_four_areas_scored_and_overall_is_mean(self):
+        from audit import structure
+        issues = [self._issue("a", "pass", structure.SG_FIVE, 1.0, site_level=True),
+                  self._issue("b", "warn", structure.SG_SERVICE, 0.0, site_level=True)]
+        built = areas.build_areas(issues, {})
+        self.assertEqual([a["key"] for a in built], ["visitor", "content", "ux", "technical"])
+        self.assertIsNotNone(areas.overall_score(built))
+
+    def test_per_page_issues_merge_with_page_count(self):
+        from audit import structure
+        issues = [self._issue("x", "warn", structure.SG_SEO, page_url=BASE + f"/p{n}") for n in range(3)]
+        built = areas.build_areas(issues, {})
+        tech = [a for a in built if a["key"] == "technical"][0]
+        shown = [i for sg in tech["subgroups"] for i in sg["issues"]]
+        self.assertEqual(len(shown), 1)
+        self.assertIn("3 pages", shown[0]["detail"] + str(shown[0].get("page", "")))
 
 
 if __name__ == "__main__":

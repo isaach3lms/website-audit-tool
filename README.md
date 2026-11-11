@@ -1,19 +1,31 @@
 # Website Audit Tool
 
-A local web app that crawls a site (same domain, breadth-first) and reports on:
+A web app that crawls a church site (same domain, breadth-first) and scores it in four areas. Each area has sub-sections, and every sub-section lists its findings.
 
-- **SEO** — titles, meta descriptions, heading structure, alt text, canonical tags, Open Graph tags, robots.txt, sitemap.xml
-- **Performance** — response time, HTML payload size, compression, caching headers, render-blocking scripts, image dimensions, script count
-- **Design & Polish** — responsive viewport, favicon, custom typography, color palette signals, motion/interactivity, visual density
-- **Links** — every internal/external link found across crawled pages, checked for broken (4xx/5xx) or unreachable targets
-- **Ministry Essentials** — church/ministry-specific signals a generic tool wouldn't check: giving/donate link, service times, physical location, sermon archive, staff/leadership bios, analytics tracking present
-- **Guest Experience Review** - what a nervous first-time visitor needs before walking in, in three groups of 11 checks:
-  - *Core Practical Details*: service times on the homepage with arrival guidance, location with a map link and parking/entrance notes, service length
-  - *What to Expect*: what to wear, worship vibe and music style (and how lyrics are shown), a promise guests will not be put on the spot, kids and youth (programs, check-in and safety, class vs. stay in service)
-  - *Community and Culture*: real vs. stock photos, plain language (unexplained church jargon), a Plan Your Visit / I'm New page, statement of faith and pastor introduction
-- **Top priorities** — an executive summary of the 5 highest-impact findings across every category, for a client-facing deliverable
+1. **First-Time Visitor and Clarity**: the 5-second test (name, city, denomination, service times, next step), practical logistics (address, map link, parking, entrances, accessibility), family and kids info (ages, check-in, safety), and plain language (church jargon).
+2. **Essential Content and Messaging**: service details (Sunday, midweek, special), What to Expect and Plan a Visit, beliefs, mission and leadership, and sermon media (links load, under 3 seconds, recent).
+3. **User Experience and Design**: mobile-first navigation and giving, visual and brand consistency across pages (logo, favicon, stylesheets, real photos), and links, forms and embeds (broken links, dead-end forms, broken embeds, outdated event dates).
+4. **Technical Health and Local SEO**: Google Business Profile signals, search optimization (unique titles, local keywords, URL structure), site speed and accessibility.
 
-These are heuristic, request-level checks (no headless browser), so treat scores as *directional* — a prompt for where to look closer, not a lab-grade Lighthouse report.
+**Top priorities** is an executive summary of the 5 highest-impact findings across all four areas.
+
+These are request-level checks (no headless browser), so treat scores as directional. Speed, accessibility and mobile usability use real Google PageSpeed data when a key is set (see below).
+
+## How scoring works
+
+- Each check is built from components. All found = pass, some = notice with partial credit, none = notice with 0 points. Visitor-facing checks never hard-fail.
+- Sub-section score = mean of its checks. Area score = mean of its sub-sections. Overall = mean of the four areas.
+- Site-level checks are always listed, passes included. Per-page findings are merged ("appears on N pages"). Link findings are never merged.
+- The review reads all crawled pages, and the crawler moves guest-facing links (visit, kids, beliefs, staff, contact) to the front of the queue. A page outside the crawl will look missing.
+- Google Business Profile is judged from the site only (GBP link, Church or LocalBusiness schema, consistent phone). Claimed and verified status must be confirmed at business.google.com.
+
+## Google PageSpeed (optional, free)
+
+1. In Google Cloud Console, create or pick a project and enable the **PageSpeed Insights API**.
+2. Create an API key (Credentials, Create credentials, API key).
+3. Set `PAGESPEED_API_KEY` locally (`export PAGESPEED_API_KEY=...`) and as an environment variable on Render.
+
+Without a key the report still runs and shows a note that speed data was not collected. The PageSpeed call runs in the background while the crawl runs, with a 45 second wait cap. Gunicorn timeout is 120 seconds in `Procfile` and `render.yaml`.
 
 ## Setup (local)
 
@@ -43,15 +55,6 @@ For Gmail specifically: enable 2-factor auth on the sending account, then genera
 **Why `EMAIL_ACCESS_CODE` exists:** this app has no login/auth (see Security notes below), and an open "email anyone a PDF" endpoint on a public URL is exactly the kind of thing spammers scan for. The email form won't send anything unless the person using it enters this code, which only you know. Without `EMAIL_ACCESS_CODE` set, the email feature returns a clear "not configured" message instead of silently failing.
 
 
-## Guest Experience Review: how it scores
-
-- Each check is built from components (for example the kids check needs programs, check-in/safety details, and how kids are placed). All found = pass, some = notice, none = notice with 0 points. It never hard-fails.
-- Partial credit flows into the score through an optional `points` value on each issue (`audit/scoring.py`). Other categories are unchanged.
-- The review reads text, links, and image names across **all crawled pages**, so a Plan Your Visit page counts. The crawler now moves guest-facing links (visit, kids, beliefs, staff, worship, contact...) to the front of the queue so a small crawl still reaches them. If a page is outside the crawl it will look missing.
-- Photo authenticity cannot be judged from code. The check flags stock-library markers in image URLs and names, counts content photos, and looks for descriptive alt text. Confirm by eye.
-- The score is included in the overall score, shown in the on-screen report and in the PDF (every check, passes included).
-- Logic lives in `audit/guest_experience.py`; tune the regex lists at the top of each check there.
-
 Run the tests (no network, no extra dependencies):
 
 ```bash
@@ -61,7 +64,9 @@ python -m unittest discover -s tests -v
 ## How it works
 
 - `audit/crawler.py` — breadth-first crawl, same-domain only, configurable page limit and depth
-- `audit/seo_checks.py`, `performance_checks.py`, `design_checks.py`, `ministry_checks.py`, `guest_experience.py` — one module per category, each returns pass/warn/fail issues
+- `audit/seo_checks.py`, `performance_checks.py`, `design_checks.py`, `accessibility_checks.py`: per-page checks
+- `audit/guest_experience.py`, `sermon_media.py`, `ux_checks.py`, `local_seo.py`, `pagespeed.py`: site-level checks
+- `audit/structure.py` (areas and sub-sections) and `audit/areas.py` (tagging, merging, scoring)
 - `audit/scoring.py` — turns issue lists into 0–100 scores and letter grades
 - `app.py` — Flask routes: `/` (form), `/audit` (runs the crawl + checks, renders the report)
 - `templates/`, `static/style.css` — the report UI

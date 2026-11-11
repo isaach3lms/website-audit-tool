@@ -12,6 +12,8 @@ Production (see README.md for full deploy steps):
 
 import os
 import io
+import time
+import concurrent.futures
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -20,9 +22,11 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 from audit.crawler import crawl
+from audit.pagedoc import Doc
 from audit import (
-    seo_checks, performance_checks, design_checks, link_checker,
-    ministry_checks, guest_experience, summary, scoring, pdf_report, emailer,
+    seo_checks, performance_checks, design_checks, link_checker, accessibility_checks,
+    guest_experience, sermon_media, ux_checks, local_seo, pagespeed, areas as areas_mod,
+    summary, scoring, pdf_report, emailer,
 )
 from audit.safety import assert_safe_url, UnsafeURLError
 
@@ -58,94 +62,90 @@ def audit():
     except UnsafeURLError as exc:
         return render_template("index.html", error=str(exc))
 
+    # Google PageSpeed takes 15 to 40 seconds, so it starts now and runs while we crawl.
+    started = time.monotonic()
+    ps_job = pagespeed.PageSpeedJob(probe_url, os.environ.get("PAGESPEED_API_KEY"))
+
     pages = crawl(url, max_pages=max_pages, max_depth=max_depth)
     crawled_ok = [p for p in pages if p.ok]
 
     if not crawled_ok:
         return render_template("index.html", error=f"Couldn't reach {url}. Check the address and try again.")
 
-    seo_issues, perf_issues, design_issues = [], [], []
+    docs = [Doc(p) for p in crawled_ok if p.soup]
+
+    # Per-page checks (the older modules)
+    seo_p, perf_p, design_p, a11y_p = [], [], [], []
     per_page = []
-
     for page in pages:
-        p_seo = seo_checks.check_page(page)
-        p_perf = performance_checks.check_page(page)
-        p_design = design_checks.check_page(page)
-        seo_issues += p_seo
-        perf_issues += p_perf
-        design_issues += p_design
-        per_page.append({
-            "url": page.url,
-            "status_code": page.status_code,
-            "ok": page.ok,
-            "seo": p_seo,
-            "perf": p_perf,
-            "design": p_design,
-        })
+        seo_p += seo_checks.check_page(page)
+        perf_p += performance_checks.check_page(page)
+        design_p += design_checks.check_page(page)
+        a11y_p += accessibility_checks.check_page(page)
+        per_page.append({"url": page.url, "status_code": page.status_code, "ok": page.ok})
+    seo_site = seo_checks.check_site(url, crawled_ok)
 
-    seo_issues += seo_checks.check_site(url, crawled_ok)
-    ministry_issues = ministry_checks.check_site(crawled_ok)
-    guest_issues = guest_experience.check_site(crawled_ok)
-
+    # Checks that make outside requests run side by side
     links = link_checker.collect_links(pages)
-    link_results = link_checker.check_links(links, max_links=MAX_LINKS_CHECKED)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+        f_links = pool.submit(link_checker.check_links, links, MAX_LINKS_CHECKED)
+        f_sermon = pool.submit(_safely, sermon_media.check_site, docs)
+        f_embeds = pool.submit(_safely, ux_checks.check_embeds, docs)
+        link_results = f_links.result()
+        sermon_issue, embeds_issue = f_sermon.result(), f_embeds.result()
     link_issues = link_checker.to_issues(link_results)
     links_skipped = sum(1 for r in link_results if r["skipped"])
 
-    seo_score = scoring.score_from_issues(seo_issues)
-    perf_score = scoring.score_from_issues(perf_issues)
-    design_score = scoring.score_from_issues(design_issues)
-    links_score = scoring.score_from_issues(link_issues)
-    ministry_score = scoring.score_from_issues(ministry_issues)
-    guest_score = scoring.score_from_issues(guest_issues)
-    scores = [s for s in (seo_score, perf_score, design_score, links_score, ministry_score, guest_score) if s is not None]
-    overall_score = round(sum(scores) / len(scores)) if scores else None
+    # Site-level checks, each filed under its area by its own "group"
+    site_checks = guest_experience.check_docs(docs) + [
+        sermon_issue,
+        _safely(ux_checks.check_mobile_nav_giving, docs),
+        _safely(ux_checks.check_brand_consistency, docs),
+        _safely(ux_checks.check_forms, docs),
+        embeds_issue,
+        _safely(ux_checks.check_fresh_content, docs),
+        _safely(local_seo.check_google_profile, docs),
+        _safely(local_seo.check_local_keywords, docs),
+        _safely(local_seo.check_url_structure, docs),
+        _safely(local_seo.check_duplicate_titles, docs),
+        _safely(local_seo.check_analytics, docs),
+    ]
+    site_checks = [i for i in site_checks if i]
 
-    root = urlparse(pages[0].url)
-    site_label = root.netloc
+    # Google PageSpeed (mobile): collect whatever finished, with a time cap
+    remaining = max(5, 45 - (time.monotonic() - started))
+    ps_result = ps_job.result(timeout=remaining)
+    ps_issues, ps_note = pagespeed.to_issues(ps_result, crawled_ok[0].url)
+    for group_issues in ps_issues.values():
+        site_checks += group_issues
 
-    tagged_issues = (
-        [dict(i, category="Ministry Essentials") for i in ministry_issues]
-        + [dict(i, category=guest_experience.CATEGORY) for i in guest_issues]
-        + [dict(i, category="SEO") for i in seo_issues]
-        + [dict(i, category="Performance") for i in perf_issues]
-        + [dict(i, category="Design & Polish") for i in design_issues]
-        + [dict(i, category="Links") for i in link_issues]
+    all_issues = (
+        areas_mod.tag_seo(seo_p + seo_site) + areas_mod.tag_performance(perf_p)
+        + areas_mod.tag_design(design_p) + areas_mod.tag_accessibility(a11y_p)
+        + areas_mod.tag_links(link_issues) + site_checks
     )
-    exec_summary = summary.build_executive_summary(tagged_issues, top_n=5)
+    notes = {areas_mod.SG_SPEED: ps_note} if ps_note else {}
+    areas = areas_mod.build_areas(all_issues, notes)
+    overall_score = areas_mod.overall_score(areas)
+
+    # Site-level findings lead the executive summary so the visitor-facing gaps surface first
+    ordered = sorted(all_issues, key=lambda i: not i.get("site_level"))
+    exec_summary = summary.build_executive_summary(areas_mod.tag_for_summary(ordered), top_n=5)
 
     report_ctx = dict(
-        site_label=site_label,
+        site_label=urlparse(pages[0].url).netloc,
         seed_url=url,
         generated_at=datetime.now().strftime("%b %d, %Y %H:%M"),
         pages_crawled=len(pages),
         pages_ok=len(crawled_ok),
-        seo_score=seo_score, perf_score=perf_score, design_score=design_score,
-        links_score=links_score, ministry_score=ministry_score, guest_score=guest_score,
         overall_score=overall_score,
-        seo_grade=scoring.grade_letter(seo_score),
-        perf_grade=scoring.grade_letter(perf_score),
-        design_grade=scoring.grade_letter(design_score),
-        links_grade=scoring.grade_letter(links_score),
-        ministry_grade=scoring.grade_letter(ministry_score),
-        guest_grade=scoring.grade_letter(guest_score),
-        seo_counts=scoring.counts_by_status(seo_issues),
-        perf_counts=scoring.counts_by_status(perf_issues),
-        design_counts=scoring.counts_by_status(design_issues),
-        links_counts=scoring.counts_by_status(link_issues),
-        ministry_counts=scoring.counts_by_status(ministry_issues),
-        guest_counts=scoring.counts_by_status(guest_issues),
-        seo_issues=[i for i in seo_issues if i["status"] != "pass"],
-        perf_issues=[i for i in perf_issues if i["status"] != "pass"],
-        design_issues=[i for i in design_issues if i["status"] != "pass"],
-        link_issues=[i for i in link_issues if i["status"] != "pass"],
-        ministry_issues=[i for i in ministry_issues if i["status"] != "pass"],
-        # The guest review shows every check (passes included) as a checklist.
-        guest_groups=guest_experience.group_issues(guest_issues),
+        overall_grade=scoring.grade_letter(overall_score),
+        areas=areas,
+        exec_summary=exec_summary,
         links_checked=len(link_results) - links_skipped,
         links_total=len(link_results),
         links_skipped=links_skipped,
-        exec_summary=exec_summary,
+        pagespeed_status=ps_result.get("status"),
     )
 
     return render_template(
@@ -154,6 +154,15 @@ def audit():
         report_data=report_ctx,
         **report_ctx,
     )
+
+
+def _safely(fn, *args):
+    """A single failing check must never take the whole audit down."""
+    try:
+        return fn(*args)
+    except Exception:
+        app.logger.exception("Check failed: %s", getattr(fn, "__name__", fn))
+        return None
 
 
 @app.route("/audit/pdf", methods=["POST"])

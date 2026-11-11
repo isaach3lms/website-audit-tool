@@ -8,6 +8,11 @@ most, without wading through the full findings list.
 _CATEGORY_WEIGHT = {
     "Ministry Essentials": 3,   # business-relevant, prospect-facing — weighted highest
     "Guest Experience": 3,      # same tier: what a first-time visitor needs to see
+    # the four report areas (see structure.py)
+    "First-Time Visitor and Clarity": 3,
+    "Essential Content and Messaging": 3,
+    "User Experience and Design": 2,
+    "Technical Health and Local SEO": 2,
     "SEO": 2,
     "Links": 2,
     "Performance": 1,
@@ -36,7 +41,9 @@ def build_executive_summary(tagged_issues, top_n=5):
     def priority(issue):
         cat_w = _CATEGORY_WEIGHT.get(issue.get("category"), 1)
         status_w = _STATUS_WEIGHT.get(issue.get("status"), 0)
-        return (status_w * 10 + cat_w)
+        # Partial-credit checks that found nothing outrank ones that found most of it
+        gap = 1 - issue.get("points", 0.5)
+        return (status_w * 10 + cat_w + gap)
 
     deduped.sort(key=priority, reverse=True)
     return deduped[:top_n]
