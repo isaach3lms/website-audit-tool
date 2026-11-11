@@ -22,7 +22,7 @@ from flask_limiter.util import get_remote_address
 from audit.crawler import crawl
 from audit import (
     seo_checks, performance_checks, design_checks, link_checker,
-    ministry_checks, summary, scoring, pdf_report, emailer,
+    ministry_checks, guest_experience, summary, scoring, pdf_report, emailer,
 )
 from audit.safety import assert_safe_url, UnsafeURLError
 
@@ -85,6 +85,7 @@ def audit():
 
     seo_issues += seo_checks.check_site(url, crawled_ok)
     ministry_issues = ministry_checks.check_site(crawled_ok)
+    guest_issues = guest_experience.check_site(crawled_ok)
 
     links = link_checker.collect_links(pages)
     link_results = link_checker.check_links(links, max_links=MAX_LINKS_CHECKED)
@@ -96,7 +97,8 @@ def audit():
     design_score = scoring.score_from_issues(design_issues)
     links_score = scoring.score_from_issues(link_issues)
     ministry_score = scoring.score_from_issues(ministry_issues)
-    scores = [s for s in (seo_score, perf_score, design_score, links_score, ministry_score) if s is not None]
+    guest_score = scoring.score_from_issues(guest_issues)
+    scores = [s for s in (seo_score, perf_score, design_score, links_score, ministry_score, guest_score) if s is not None]
     overall_score = round(sum(scores) / len(scores)) if scores else None
 
     root = urlparse(pages[0].url)
@@ -104,6 +106,7 @@ def audit():
 
     tagged_issues = (
         [dict(i, category="Ministry Essentials") for i in ministry_issues]
+        + [dict(i, category=guest_experience.CATEGORY) for i in guest_issues]
         + [dict(i, category="SEO") for i in seo_issues]
         + [dict(i, category="Performance") for i in perf_issues]
         + [dict(i, category="Design & Polish") for i in design_issues]
@@ -118,23 +121,27 @@ def audit():
         pages_crawled=len(pages),
         pages_ok=len(crawled_ok),
         seo_score=seo_score, perf_score=perf_score, design_score=design_score,
-        links_score=links_score, ministry_score=ministry_score,
+        links_score=links_score, ministry_score=ministry_score, guest_score=guest_score,
         overall_score=overall_score,
         seo_grade=scoring.grade_letter(seo_score),
         perf_grade=scoring.grade_letter(perf_score),
         design_grade=scoring.grade_letter(design_score),
         links_grade=scoring.grade_letter(links_score),
         ministry_grade=scoring.grade_letter(ministry_score),
+        guest_grade=scoring.grade_letter(guest_score),
         seo_counts=scoring.counts_by_status(seo_issues),
         perf_counts=scoring.counts_by_status(perf_issues),
         design_counts=scoring.counts_by_status(design_issues),
         links_counts=scoring.counts_by_status(link_issues),
         ministry_counts=scoring.counts_by_status(ministry_issues),
+        guest_counts=scoring.counts_by_status(guest_issues),
         seo_issues=[i for i in seo_issues if i["status"] != "pass"],
         perf_issues=[i for i in perf_issues if i["status"] != "pass"],
         design_issues=[i for i in design_issues if i["status"] != "pass"],
         link_issues=[i for i in link_issues if i["status"] != "pass"],
         ministry_issues=[i for i in ministry_issues if i["status"] != "pass"],
+        # The guest review shows every check (passes included) as a checklist.
+        guest_groups=guest_experience.group_issues(guest_issues),
         links_checked=len(link_results) - links_skipped,
         links_total=len(link_results),
         links_skipped=links_skipped,

@@ -7,6 +7,10 @@ A local web app that crawls a site (same domain, breadth-first) and reports on:
 - **Design & Polish** — responsive viewport, favicon, custom typography, color palette signals, motion/interactivity, visual density
 - **Links** — every internal/external link found across crawled pages, checked for broken (4xx/5xx) or unreachable targets
 - **Ministry Essentials** — church/ministry-specific signals a generic tool wouldn't check: giving/donate link, service times, physical location, sermon archive, staff/leadership bios, analytics tracking present
+- **Guest Experience Review** - what a nervous first-time visitor needs before walking in, in three groups of 11 checks:
+  - *Core Practical Details*: service times on the homepage with arrival guidance, location with a map link and parking/entrance notes, service length
+  - *What to Expect*: what to wear, worship vibe and music style (and how lyrics are shown), a promise guests will not be put on the spot, kids and youth (programs, check-in and safety, class vs. stay in service)
+  - *Community and Culture*: real vs. stock photos, plain language (unexplained church jargon), a Plan Your Visit / I'm New page, statement of faith and pastor introduction
 - **Top priorities** — an executive summary of the 5 highest-impact findings across every category, for a client-facing deliverable
 
 These are heuristic, request-level checks (no headless browser), so treat scores as *directional* — a prompt for where to look closer, not a lab-grade Lighthouse report.
@@ -39,10 +43,25 @@ For Gmail specifically: enable 2-factor auth on the sending account, then genera
 **Why `EMAIL_ACCESS_CODE` exists:** this app has no login/auth (see Security notes below), and an open "email anyone a PDF" endpoint on a public URL is exactly the kind of thing spammers scan for. The email form won't send anything unless the person using it enters this code, which only you know. Without `EMAIL_ACCESS_CODE` set, the email feature returns a clear "not configured" message instead of silently failing.
 
 
+## Guest Experience Review: how it scores
+
+- Each check is built from components (for example the kids check needs programs, check-in/safety details, and how kids are placed). All found = pass, some = notice, none = notice with 0 points. It never hard-fails.
+- Partial credit flows into the score through an optional `points` value on each issue (`audit/scoring.py`). Other categories are unchanged.
+- The review reads text, links, and image names across **all crawled pages**, so a Plan Your Visit page counts. The crawler now moves guest-facing links (visit, kids, beliefs, staff, worship, contact...) to the front of the queue so a small crawl still reaches them. If a page is outside the crawl it will look missing.
+- Photo authenticity cannot be judged from code. The check flags stock-library markers in image URLs and names, counts content photos, and looks for descriptive alt text. Confirm by eye.
+- The score is included in the overall score, shown in the on-screen report and in the PDF (every check, passes included).
+- Logic lives in `audit/guest_experience.py`; tune the regex lists at the top of each check there.
+
+Run the tests (no network, no extra dependencies):
+
+```bash
+python -m unittest discover -s tests -v
+```
+
 ## How it works
 
 - `audit/crawler.py` — breadth-first crawl, same-domain only, configurable page limit and depth
-- `audit/seo_checks.py`, `performance_checks.py`, `design_checks.py` — one function per category, each returns pass/warn/fail issues
+- `audit/seo_checks.py`, `performance_checks.py`, `design_checks.py`, `ministry_checks.py`, `guest_experience.py` — one module per category, each returns pass/warn/fail issues
 - `audit/scoring.py` — turns issue lists into 0–100 scores and letter grades
 - `app.py` — Flask routes: `/` (form), `/audit` (runs the crawl + checks, renders the report)
 - `templates/`, `static/style.css` — the report UI

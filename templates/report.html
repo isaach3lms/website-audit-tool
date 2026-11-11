@@ -114,6 +114,10 @@
       <div class="stamp-score">{{ ministry_score if ministry_score is not none else '—' }}</div>
       <div class="stamp-label">MINISTRY · {{ ministry_grade }}</div>
     </div>
+    <div class="stamp stamp-{{ 'pass' if guest_score and guest_score>=80 else ('warn' if guest_score and guest_score>=60 else 'fail') }}">
+      <div class="stamp-score">{{ guest_score if guest_score is not none else '—' }}</div>
+      <div class="stamp-label">GUEST EXPERIENCE · {{ guest_grade }}</div>
+    </div>
   </section>
 
   {% if exec_summary %}
@@ -161,6 +165,33 @@
   {% endmacro %}
 
   {{ section("Ministry Essentials", "ministry", ministry_issues, ministry_counts) }}
+
+  {% if guest_groups %}
+  <section class="findings guest-review">
+    <div class="findings-head">
+      <h2>Guest Experience Review</h2>
+      <div class="count-chip">
+        <span class="dot dot-pass"></span>{{ guest_counts.pass }} pass
+        <span class="dot dot-warn"></span>{{ guest_counts.warn }} notice
+      </div>
+    </div>
+    <p class="guest-intro">Could a nervous first-time visitor decide to walk in using only this website? Every check is shown, passes included.</p>
+    {% for group in guest_groups %}
+    <h3 class="guest-group">{{ group.name }}<span class="guest-group-sub">{{ group.subtitle }}</span></h3>
+    {% for i in group.checks %}
+    <div class="annotation annotation-{{ i.status }}">
+      <div class="annotation-tag">{{ 'PASS' if i.status == 'pass' else ('ISSUE' if i.status == 'fail' else 'NOTICE') }}</div>
+      <div class="annotation-body">
+        <div class="annotation-label">{{ i.label }}</div>
+        <div class="annotation-detail">{{ i.detail }}</div>
+        <div class="annotation-page">{{ i.page }}</div>
+      </div>
+    </div>
+    {% endfor %}
+    {% endfor %}
+    <p class="design-note guest-note">The guest review reads text, links, and image names across the {{ pages_ok }} reachable page(s) crawled. Anything that lives only on a page outside the crawl will look missing, and photo authenticity cannot be confirmed from code, so confirm by eye. Like the Ministry checks, these are opportunities, never hard failures.</p>
+  </section>
+  {% endif %}
   {{ section("SEO", "SEO", seo_issues, seo_counts) }}
   {{ section("Performance", "performance", perf_issues, perf_counts) }}
   {{ section("Design & Polish", "design", design_issues, design_counts) }}

@@ -7,6 +7,7 @@ most, without wading through the full findings list.
 
 _CATEGORY_WEIGHT = {
     "Ministry Essentials": 3,   # business-relevant, prospect-facing — weighted highest
+    "Guest Experience": 3,      # same tier: what a first-time visitor needs to see
     "SEO": 2,
     "Links": 2,
     "Performance": 1,

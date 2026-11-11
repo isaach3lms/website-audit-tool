@@ -236,12 +236,12 @@ h1, h2 {
 
 .stamp {
   flex: 1;
-  min-width: 150px;
+  min-width: 100px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-top: 3px solid;
   border-radius: 14px;
-  padding: 20px 16px;
+  padding: 20px 12px;
   text-align: left;
   box-shadow: 0 1px 2px rgba(11, 16, 38, 0.04);
 }
@@ -363,6 +363,7 @@ h1, h2 {
   background: var(--surface);
 }
 .annotation-fail { border-left-color: var(--fail); }
+.annotation-pass { border-left-color: var(--pass); }
 .annotation-warn { border-left-color: var(--warn); }
 
 .annotation-tag {
@@ -376,6 +377,7 @@ h1, h2 {
   white-space: nowrap;
 }
 .annotation-fail .annotation-tag { background: var(--fail-bg); color: var(--fail); }
+.annotation-pass .annotation-tag { background: var(--pass-bg); color: var(--pass); }
 .annotation-warn .annotation-tag { background: var(--warn-bg); color: var(--warn); }
 
 .annotation-label { font-weight: 600; font-size: 14px; color: var(--ink); }
@@ -430,3 +432,20 @@ h1, h2 {
   .stamp { min-width: 42%; }
   .report-header { flex-direction: column; align-items: flex-start; gap: 12px; }
 }
+
+/* Guest Experience Review */
+.guest-intro { font-size: 13px; color: var(--ink-muted); margin: -4px 0 18px; }
+.guest-group {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 22px 0 10px;
+}
+.guest-group-sub {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-muted);
+  margin-left: 10px;
+}
+.guest-note { margin: 18px 0 0; }

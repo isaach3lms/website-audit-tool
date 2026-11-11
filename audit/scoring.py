@@ -10,7 +10,10 @@ STATUS_POINTS = {"pass": 1.0, "warn": 0.5, "fail": 0.0}
 def score_from_issues(issues):
     if not issues:
         return None
-    total = sum(STATUS_POINTS.get(i["status"], 0) for i in issues)
+    # An issue may carry an explicit "points" value (0.0 to 1.0) for partial
+    # credit, used by the Guest Experience checks. Everything else falls back
+    # to the pass/warn/fail mapping above.
+    total = sum(i.get("points", STATUS_POINTS.get(i["status"], 0)) for i in issues)
     return round(total / len(issues) * 100)
 
 

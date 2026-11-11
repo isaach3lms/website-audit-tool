@@ -14,7 +14,7 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Flowable
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Flowable, KeepTogether
 )
 
 INK = colors.HexColor("#0B1026")
@@ -82,18 +82,19 @@ def _styles():
         "all_clear": ParagraphStyle("AllClear", parent=base["Normal"], fontSize=9.5, textColor=PASS, leading=13),
         "table_head": ParagraphStyle("TableHead", parent=base["Normal"], fontName="Courier", fontSize=8, textColor=INK_MUTED),
         "table_cell": ParagraphStyle("TableCell", parent=base["Normal"], fontName="Courier", fontSize=8, textColor=INK, wordWrap="CJK"),
+        "group_head": ParagraphStyle("GroupHead", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=10.5, textColor=INK_SOFT, leading=14, spaceBefore=8, spaceAfter=5),
         "summary_item": ParagraphStyle("SummaryItem", parent=base["Normal"], fontSize=10.5, textColor=INK, leading=15),
     }
 
 
-def _score_tile(label, score, grade, s):
+def _score_tile(label, score, grade, s, width=1.5 * inch):
     color, bg = _band_color(score)
     score_text = str(score) if score is not None else "—"
     label_text = f"{label} · {grade}" if grade and grade != "—" else label
     inner = Table(
         [[Paragraph(f"<font color='{color.hexval()}'>{score_text}</font>", s["score_num"])],
          [Paragraph(label_text, s["score_label"])]],
-        colWidths=[1.5 * inch],
+        colWidths=[width],
     )
     inner.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), bg),
@@ -134,45 +135,82 @@ def _executive_summary(exec_summary, story, s):
     story.append(Spacer(1, 8))
 
 
+def _issue_card(issue, s):
+    status = issue.get("status", "warn")
+    color, bg = _STATUS_COLORS.get(status, (WARN, WARN_BG))
+    tag_text = {"fail": "ISSUE", "pass": "PASS"}.get(status, "NOTICE")
+    label = _esc(str(issue.get("label", "")))
+    detail = _esc(str(issue.get("detail", "")))
+    page = _esc(str(issue.get("page", "")))
+    cell = Table(
+        [[Paragraph(
+            f"<font color='{color.hexval()}'><b>{tag_text}</b></font><br/><br/>"
+            f"<font color='{INK_SOFT.hexval()}'><b>{label}</b></font><br/>"
+            f"<font color='{INK_MUTED.hexval()}'>{detail}</font><br/>"
+            f"<font color='{BRAND_SOFT.hexval()}'>{page}</font>",
+            s["tag_detail"]
+        )]],
+        colWidths=[6.3 * inch],
+    )
+    cell.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+        ("BOX", (0, 0), (-1, -1), 0.75, BORDER),
+        ("LINEBEFORE", (0, 0), (0, -1), 2.5, color),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12),
+    ]))
+    return cell
+
+
+def _guest_section(groups, counts, pages_ok, story, s):
+    """Guest Experience Review: every check shown (passes included), grouped."""
+    if not groups:
+        return
+    chip = (f"<font color='#2F8F5B'>{counts.get('pass', 0)} pass</font>  "
+            f"<font color='#B4790E'>{counts.get('warn', 0)} notice</font>")
+    head = [
+        Paragraph("Guest Experience Review", s["h2"]),
+        Paragraph(chip, s["note"]),
+        Paragraph("Could a nervous first-time visitor decide to walk in using only this website? "
+                  "Every check is shown, passes included.", s["note"]),
+        Spacer(1, 4),
+    ]
+    for group in groups:
+        head.append(Paragraph(
+            f"{_esc(str(group.get('name', '')))} "
+            f"<font color='{INK_MUTED.hexval()}' size='8.5'>{_esc(str(group.get('subtitle', '')))}</font>",
+            s["group_head"]))
+        for n, issue in enumerate(group.get("checks", [])):
+            card = [_issue_card(issue, s), Spacer(1, 6)]
+            if n == 0:
+                # a heading never ends a page on its own: it travels with its first card
+                story.append(KeepTogether(head + card))
+                head = []
+            else:
+                story.extend(card)
+    story.append(Paragraph(
+        f"Based on text, links, and image names across the {int(pages_ok or 0)} reachable page(s) crawled. "
+        "Anything that lives only on a page outside the crawl will look missing, and photo authenticity "
+        "cannot be confirmed from code, so confirm by eye.", s["note"]))
+    story.append(Spacer(1, 8))
+
+
 def _findings_section(title, issues, counts, story, s):
-    story.append(Paragraph(title, s["h2"]))
     chip = (f"<font color='#2F8F5B'>{counts.get('pass', 0)} pass</font>  "
             f"<font color='#B4790E'>{counts.get('warn', 0)} notice</font>  "
             f"<font color='#C1440E'>{counts.get('fail', 0)} issue</font>")
-    story.append(Paragraph(chip, s["note"]))
-    story.append(Spacer(1, 6))
+    head = [Paragraph(title, s["h2"]), Paragraph(chip, s["note"]), Spacer(1, 6)]
 
     if not issues:
-        story.append(Paragraph("No issues found across the crawled pages.", s["all_clear"]))
+        story.append(KeepTogether(head + [Paragraph("No issues found across the crawled pages.", s["all_clear"])]))
         story.append(Spacer(1, 10))
         return
 
-    for issue in issues:
-        status = issue.get("status", "warn")
-        color, bg = _STATUS_COLORS.get(status, (WARN, WARN_BG))
-        tag_text = "ISSUE" if status == "fail" else "NOTICE"
-        label = _esc(str(issue.get("label", "")))
-        detail = _esc(str(issue.get("detail", "")))
-        page = _esc(str(issue.get("page", "")))
-        cell = Table(
-            [[Paragraph(
-                f"<font color='{color.hexval()}'><b>{tag_text}</b></font><br/><br/>"
-                f"<font color='{INK_SOFT.hexval()}'><b>{label}</b></font><br/>"
-                f"<font color='{INK_MUTED.hexval()}'>{detail}</font><br/>"
-                f"<font color='{BRAND_SOFT.hexval()}'>{page}</font>",
-                s["tag_detail"]
-            )]],
-            colWidths=[6.3 * inch],
-        )
-        cell.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.white),
-            ("BOX", (0, 0), (-1, -1), 0.75, BORDER),
-            ("LINEBEFORE", (0, 0), (0, -1), 2.5, color),
-            ("TOPPADDING", (0, 0), (-1, -1), 8),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-            ("LEFTPADDING", (0, 0), (-1, -1), 12),
-        ]))
-        story.append(cell)
+    # keep the heading with the first card so it never sits alone at a page bottom
+    story.append(KeepTogether(head + [_issue_card(issues[0], s), Spacer(1, 6)]))
+    for issue in issues[1:]:
+        story.append(_issue_card(issue, s))
         story.append(Spacer(1, 6))
     story.append(Spacer(1, 8))
 
@@ -203,22 +241,26 @@ def build_pdf(data):
     story.append(Paragraph(meta, s["subtitle"]))
     story.append(HRFlowable(width="100%", thickness=1, color=BORDER, spaceAfter=16))
 
+    w = 1.7 * inch
     tiles = [
-        _score_tile("OVERALL", data.get("overall_score"), None, s),
-        _score_tile("SEO", data.get("seo_score"), data.get("seo_grade"), s),
-        _score_tile("PERFORMANCE", data.get("perf_score"), data.get("perf_grade"), s),
-        _score_tile("DESIGN & POLISH", data.get("design_score"), data.get("design_grade"), s),
-        _score_tile("LINKS", data.get("links_score"), data.get("links_grade"), s),
-        _score_tile("MINISTRY", data.get("ministry_score"), data.get("ministry_grade"), s),
+        _score_tile("OVERALL", data.get("overall_score"), None, s, w),
+        _score_tile("SEO", data.get("seo_score"), data.get("seo_grade"), s, w),
+        _score_tile("PERFORMANCE", data.get("perf_score"), data.get("perf_grade"), s, w),
+        _score_tile("DESIGN & POLISH", data.get("design_score"), data.get("design_grade"), s, w),
+        _score_tile("LINKS", data.get("links_score"), data.get("links_grade"), s, w),
+        _score_tile("MINISTRY", data.get("ministry_score"), data.get("ministry_grade"), s, w),
+        _score_tile("GUEST EXPERIENCE", data.get("guest_score"), data.get("guest_grade"), s, w),
     ]
-    tile_row = Table([tiles], colWidths=[1.13 * inch] * 6, hAlign="LEFT")
-    tile_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    story.append(tile_row)
+    for row in (tiles[:4], tiles[4:]):
+        tile_row = Table([row], colWidths=[1.75 * inch] * len(row), hAlign="LEFT")
+        tile_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+        story.append(tile_row)
+        story.append(Spacer(1, 8))
     story.append(Spacer(1, 12))
     story.append(Paragraph(
         "\"Design &amp; Polish\" is a heuristic signal (responsiveness, custom type, palette, motion, "
-        "brand completeness) — not a taste judgment. \"Ministry\" checks are business-relevant "
-        "signals specific to church/ministry sites, not technical pass/fail.",
+        "brand completeness) — not a taste judgment. \"Ministry\" and \"Guest Experience\" checks are "
+        "business-relevant signals specific to church/ministry sites, not technical pass/fail.",
         s["note"]
     ))
     story.append(Spacer(1, 6))
@@ -226,6 +268,7 @@ def build_pdf(data):
     _executive_summary(data.get("exec_summary", []), story, s)
 
     _findings_section("Ministry Essentials", data.get("ministry_issues", []), data.get("ministry_counts", {}), story, s)
+    _guest_section(data.get("guest_groups", []), data.get("guest_counts", {}), data.get("pages_ok"), story, s)
     _findings_section("SEO", data.get("seo_issues", []), data.get("seo_counts", {}), story, s)
     _findings_section("Performance", data.get("perf_issues", []), data.get("perf_counts", {}), story, s)
     _findings_section("Design &amp; Polish", data.get("design_issues", []), data.get("design_counts", {}), story, s)
